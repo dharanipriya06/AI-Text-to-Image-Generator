@@ -1,0 +1,4 @@
+.env
+gallery/
+users.db
+__pycache__/
