@@ -1,17 +1,27 @@
 import streamlit as st
-from huggingface_hub import InferenceClient
 from PIL import Image
 from deep_translator import GoogleTranslator
 import io
 import requests
-from database import create_database, register_user, login_user
+from database import (
+    create_database,
+    register_user,
+    login_user,
+    create_history_table,
+    save_prompt,
+    get_prompt_history
+)
 from auth import auth_page
 from dotenv import load_dotenv
 import os
+import urllib.parse
 
 load_dotenv()
+create_database()
+create_history_table()
 
-HF_TOKEN = os.getenv("HF_TOKEN")
+
+
 # -----------------------------
 # PAGE SETTINGS
 # -----------------------------
@@ -56,15 +66,12 @@ if "logged_in" not in st.session_state:
 
 
 
-create_database()
+
 if not os.path.exists("gallery"):
     os.makedirs("gallery")
 
 
-client = InferenceClient(
-    provider="hf-inference",
-    api_key=HF_TOKEN
-)
+
 
 # -----------------------------
 # TITLE
@@ -115,9 +122,8 @@ with col2:
         prompt = "A cute puppy playing in a garden"
 # Sidebar
 st.sidebar.title("⚙️ Settings")
-
 st.sidebar.write(
-    "Model: FLUX.1-schnell"
+    "Model: Stable Diffusion XL"
 )
 
 st.sidebar.write(
@@ -151,6 +157,19 @@ prompt = st.text_area(
     "✨ Describe your image",
     height=120,
     placeholder="Example: A futuristic city at sunset..."
+)
+style = st.selectbox(
+    "🎨 Choose Image Style",
+    [
+        "Realistic",
+        "Anime",
+        "3D Render",
+        "Watercolor",
+        "Oil Painting",
+        "Fantasy",
+        "Cyberpunk",
+        "Pixel Art"
+    ]
 )
 tanglish_dict = {
     "yaanai": "elephant",
@@ -187,11 +206,29 @@ def convert_tanglish(prompt):
 
     return " ".join(converted)
 
+
+from PIL import Image
+import requests
+import io
+
 def generate_image(prompt):
-    image = client.text_to_image(
-        prompt,
-        model="black-forest-labs/FLUX.1-schnell"
-    )
+    try:
+        encoded_prompt = urllib.parse.quote(prompt)
+
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            image = Image.open(io.BytesIO(response.content))
+            return image
+        else:
+            st.error("Failed to generate image.")
+            return None
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return None
 
     return image
 if st.button("🚀 Generate Image"):
@@ -200,11 +237,31 @@ if st.button("🚀 Generate Image"):
 
         with st.spinner("Generating Image..."):
 
-            english_prompt = convert_tanglish(prompt)
+            try:
+                english_prompt = GoogleTranslator(
+                    source="auto",
+                    target="en"
+                ).translate(prompt)
 
-            image = generate_image(english_prompt)
+            except Exception:
+                english_prompt = convert_tanglish(prompt)
 
-            
+            final_prompt = (
+                f"{english_prompt}, {style}, "
+                "highly detailed, 8K, masterpiece"
+            )
+
+            st.info(f"Prompt Sent to AI:\n{final_prompt}")
+
+            image = generate_image(final_prompt)
+
+            if image is None:
+                st.stop()
+                
+            save_prompt(
+    st.session_state.username,
+    final_prompt
+)
 
             username = st.session_state.username
 
@@ -278,3 +335,13 @@ if images:
 
 else: 
      st.info("No images found.") 
+     
+st.markdown("## 📜 Prompt History")
+
+history = get_prompt_history(st.session_state.username)
+
+if history:
+    for i, item in enumerate(history, 1):
+        st.write(f"{i}. {item[0]}")
+else:
+    st.info("No prompt history yet.")
