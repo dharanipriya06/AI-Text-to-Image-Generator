@@ -1,5 +1,5 @@
 streamlit
-huggingface_hub
-pillow
+Pillow
 deep-translator
+requests
 python-dotenv
